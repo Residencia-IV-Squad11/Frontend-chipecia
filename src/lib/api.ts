@@ -1,6 +1,5 @@
 const BASE = "/api";
 
-// Função base mantida
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -13,7 +12,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-// Interfaces mantidas (O React não vai quebrar)
 export interface Attendance {
   id: number;
   category: string;
@@ -26,6 +24,9 @@ export interface Attendance {
   summary: string;
   sla_time_minutes: number;
   created_at: string;
+  numero_protocolo?: string;
+  cliente_nome?: string;
+  atendente_nome?: string;
 }
 
 export interface AttendanceListResponse {
@@ -39,118 +40,200 @@ export interface AttendanceListResponse {
 export interface DashboardOverview {
   totalAttendances: number;
   averageScore: number;
-  averageSlaMinutes: number; // *O backend não tem isso ainda, deixei como 0
-  sentimentDistribution: { positive: number; neutral: number; negative: number };
-  qualityMetricsTrend: { date: string; empathy: number; clarity: number; objectivity: number; resolutiveness: number }[];
+  averageSlaMinutes: number;
+  sentimentDistribution: {
+    positive: number;
+    neutral: number;
+    negative: number;
+  };
+  qualityMetricsTrend: {
+    date: string;
+    empathy: number;
+    clarity: number;
+    objectivity: number;
+    resolutiveness: number;
+  }[];
   recentAttendances: Attendance[];
 }
 
 export interface AnalysisResult extends Attendance {}
 
 export const api = {
-  // 1. TRADUÇÃO DO DASHBOARD (Mapeando do Português para o Inglês)
   getDashboardOverview: async (): Promise<DashboardOverview> => {
-    // O backend retorna { sucesso: true, dados: { ... } }
     const response: any = await apiFetch("/dashboard/resumo");
     const dados = response.dados || {};
 
-    // Traduz a lista do banco para o formato de objeto que o React espera
     const sentimentos = { positive: 0, neutral: 0, negative: 0 };
     if (dados.distribuicao_sentimento) {
       dados.distribuicao_sentimento.forEach((item: any) => {
-        if (item.sentimento.toLowerCase() === 'positivo') sentimentos.positive = item.total;
-        if (item.sentimento.toLowerCase() === 'neutro') sentimentos.neutral = item.total;
-        if (item.sentimento.toLowerCase() === 'negativo') sentimentos.negative = item.total;
+        const s = item.sentimento.toLowerCase();
+        if (s === "positivo") sentimentos.positive = item.total;
+        if (s === "neutro") sentimentos.neutral = item.total;
+        if (s === "negativo") sentimentos.negative = item.total;
       });
     }
 
-    // Traduz a evolução de score
     const trend = (dados.evolucao_score_diaria || []).map((item: any) => ({
-      date: item.data,
-      empathy: item.media_score, // Usando media_score como base provisória
-      clarity: item.media_score,
-      objectivity: item.media_score,
-      resolutiveness: item.media_score
+      date: item.date,
+      empathy: item.empathy || item.media_score || 0,
+      clarity: item.clarity || item.media_score || 0,
+      objectivity: item.objectivity || item.media_score || 0,
+      resolutiveness: item.resolutiveness || item.media_score || 0,
+    }));
+
+    const recentes = (dados.recentes || []).map((item: any) => ({
+      id: item.id,
+      category: item.category || "Geral",
+      sentiment: item.sentiment || "neutral",
+      score: item.score || 0,
+      summary: item.summary || "",
+      created_at: item.created_at || new Date().toISOString(),
+      empathy: item.empathy || 0,
+      clarity: item.clarity || 0,
+      objectivity: item.objectivity || 0,
+      resolutiveness: item.resolutiveness || 0,
+      sla_time_minutes: 0,
+      numero_protocolo: item.numero_protocolo || "",
+      cliente_nome: item.cliente_nome || "",
+      atendente_nome: item.atendente_nome || "",
     }));
 
     return {
       totalAttendances: dados.total_atendimentos || 0,
       averageScore: dados.media_score_final || 0,
-      averageSlaMinutes: 0, // Pode ser implementado no backend futuramente
+      averageSlaMinutes: 0,
       sentimentDistribution: sentimentos,
       qualityMetricsTrend: trend,
-      recentAttendances: [] // Deixado vazio ou pode ser preenchido chamando a rota de listar
+      recentAttendances: recentes,
     };
   },
 
-  // 2. TRADUÇÃO DA LISTAGEM
-  listAttendances: async (params: { page?: number; limit?: number; sentiment?: string }): Promise<AttendanceListResponse> => {
+  listAttendances: async (params: {
+    page?: number;
+    limit?: number;
+    sentiment?: string;
+  }): Promise<AttendanceListResponse> => {
     const q = new URLSearchParams();
     if (params.page) q.set("page", String(params.page));
     if (params.limit) q.set("per_page", String(params.limit));
-    
-    const qs = q.toString();
-    const response: any = await apiFetch(`/atendimento/listar${qs ? `?${qs}` : ""}`);
-    
-    // 👇 AQUI ESTÁ A CORREÇÃO: Traduzindo o sentimento antes de desenhar a tela
-    const atendimentosTraduzidos = (response.atendimentos || []).map((item: any) => {
-      // Tradutor de Sentimento
-      let sentimentoTraduzido = "neutral";
-      if (item.sentimento) {
-        const s = item.sentimento.toLowerCase();
-        if (s === "positivo") sentimentoTraduzido = "positive";
-        else if (s === "negativo") sentimentoTraduzido = "negative";
-      }
 
-      return {
-        id: item.idatendimento || item.id,
-        category: item.categoria || "N/A",
-        sentiment: sentimentoTraduzido, // 👈 Recebe a palavra já traduzida
-        score: item.score_final || 0,
-        summary: item.resumo || "",
-        created_at: item.data_criacao || new Date().toISOString(), 
-        empathy: item.empatia || 0,
-        clarity: item.clareza || 0,
-        objectivity: item.objetividade || 0,
-        resolutiveness: item.resolutividade || 0,
-        sla_time_minutes: 0
-      };
-    });
+    // Constrói URL com filtro de sentimento
+    let url = `/atendimento/fila?status=concluido`;
+    if (params.sentiment && params.sentiment !== "all") {
+      const sentimentoPt =
+        params.sentiment === "positive"
+          ? "positivo"
+          : params.sentiment === "negative"
+            ? "negativo"
+            : "neutro";
+      url += `&sentimento=${sentimentoPt}`;
+    }
+
+    // Busca da fila de avaliação (concluídos)
+    const filaRes: any = await apiFetch(url);
+    const itens = (filaRes.itens || [])
+      .map((item: any) => {
+        let resultado: any = {};
+        if (item.resultado_groq) {
+          try {
+            resultado = JSON.parse(item.resultado_groq);
+          } catch {
+            try {
+              resultado = eval("(" + item.resultado_groq + ")");
+            } catch {
+              resultado = {};
+            }
+          }
+        }
+        const qualidade = resultado.qualidade || {};
+        const classif = resultado.classificacao || {};
+        const sentimento = (classif.sentimento || "").toLowerCase();
+
+        return {
+          id: item.id,
+          category: classif.categoria || "Geral",
+          sentiment: sentimento.includes("positiv")
+            ? "positive"
+            : sentimento.includes("negativ")
+              ? "negative"
+              : "neutral",
+          score: qualidade.score_final || 0,
+          summary: resultado.resumo || "",
+          created_at: item.criado_em || new Date().toISOString(),
+          empathy: qualidade.empatia || 0,
+          clarity: qualidade.clareza || 0,
+          objectivity: qualidade.objetividade || 0,
+          resolutiveness: qualidade.resolutividade || 0,
+          sla_time_minutes: 0,
+          numero_protocolo: item.numero_protocolo || "",
+          cliente_nome: item.cliente_nome || "",
+          atendente_nome: item.atendente_nome || "",
+        };
+      })
+      .filter((item: Attendance) => {
+        // Filtra por sentimento no frontend também
+        if (params.sentiment && params.sentiment !== "all") {
+          return item.sentiment === params.sentiment;
+        }
+        return true;
+      });
+
+    // Paginação
+    const page = params.page || 1;
+    const limit = params.limit || 20;
+    const total = itens.length;
+    const start = (page - 1) * limit;
+    const paginado = itens.slice(start, start + limit);
 
     return {
-      data: atendimentosTraduzidos,
-      total: response.total || 0,
-      page: response.pagina || 1,
-      limit: params.limit || 20,
-      totalPages: response.paginas || 1
+      data: paginado,
+      total: total,
+      page: page,
+      limit: limit,
+      totalPages: Math.ceil(total / limit),
     };
   },
 
-  // 3. TRADUÇÃO DA ANÁLISE (Enviando 'texto_conversa' em vez de 'transcript')
-  analyzeAttendance: async (body: { transcript: string; category?: string }): Promise<AnalysisResult> => {
-    // 1. Manda a IA avaliar
-    const response: any = await apiFetch("/atendimento/avaliar", { 
-      method: "POST", 
-      body: JSON.stringify({ texto_conversa: body.transcript }) 
+  analyzeAttendance: async (body: {
+    transcript: string;
+    category?: string;
+  }): Promise<AnalysisResult> => {
+    const response: any = await apiFetch("/atendimento/avaliar", {
+      method: "POST",
+      body: JSON.stringify({ texto_conversa: body.transcript }),
     });
-    
-    // 2. Se salvou no banco, busca os detalhes completos usando o ID retornado
+
     if (response.sucesso && response.atendimento_id) {
-      const detalhe: any = await apiFetch(`/atendimento/${response.atendimento_id}`);
+      const detalhe: any = await apiFetch(
+        `/atendimento/${response.atendimento_id}`,
+      );
       const dados = detalhe.dados;
-      
-      // 3. Traduz os dados do banco para a tela do React
+      const classificacao = dados?.classificacao || {};
+      const qualidade = dados?.qualidade || {};
+
+      const sentimentoTraduzido = classificacao.sentimento
+        ?.toLowerCase()
+        .includes("positiv")
+        ? "positive"
+        : classificacao.sentimento?.toLowerCase().includes("negativ")
+          ? "negative"
+          : "neutral";
+
       return {
-        id: dados.idatendimento || response.atendimento_id,
-        category: dados.categoria || "N/A",
-        sentiment: dados.sentimento || "neutral",
-        summary: dados.resumo || "Resumo não disponível.",
-        score: response.score_final || dados.score_final || 0,
-        empathy: 0, clarity: 0, objectivity: 0, resolutiveness: 0,
-        sla_time_minutes: 0, created_at: new Date().toISOString()
-      } as AnalysisResult;
+        id: dados?.id || response?.atendimento_id || 0,
+        category: classificacao.categoria || "N/A",
+        sentiment: sentimentoTraduzido as "positive" | "neutral" | "negative",
+        summary: dados?.resumo || "Resumo não disponível.",
+        score: qualidade.score_final || response?.score_final || 0,
+        empathy: qualidade.empatia || 0,
+        clarity: qualidade.clareza || 0,
+        objectivity: qualidade.objetividade || 0,
+        resolutiveness: qualidade.resolutividade || 0,
+        sla_time_minutes: 0,
+        created_at: dados?.data_criacao || new Date().toISOString(),
+      };
     }
-    
+
     return response;
   },
 };

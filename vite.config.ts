@@ -14,15 +14,15 @@ export default defineConfig({
     ...(process.env.REPL_ID !== undefined
       ? [
           await import("@replit/vite-plugin-runtime-error-modal").then((m) =>
-            m.default()
+            m.default(),
           ),
           await import("@replit/vite-plugin-cartographer").then((m) =>
             m.cartographer({
               root: path.resolve(import.meta.dirname, ".."),
-            })
+            }),
           ),
           await import("@replit/vite-plugin-dev-banner").then((m) =>
-            m.devBanner()
+            m.devBanner(),
           ),
         ]
       : []),
@@ -30,11 +30,16 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
-      "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      "@assets": path.resolve(
+        import.meta.dirname,
+        "..",
+        "..",
+        "attached_assets",
+      ),
       "@workspace/api-client-react": path.resolve(
         import.meta.dirname,
         "src",
-        "api-client"
+        "api-client",
       ),
     },
     dedupe: ["react", "react-dom"],
@@ -54,7 +59,7 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:5000", // 👈 troque pela URL do seu backend
+        target: "https://backend-chip-cia.onrender.com", // 👈 troque pela URL do seu backend
         changeOrigin: true,
       },
     },
