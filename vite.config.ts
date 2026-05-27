@@ -59,7 +59,7 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: "https://chip&ciaapi.onrender.com", // 👈 troque pela URL do seu backend
+        target: "https://chipandciaapi.onrender.com", // 👈 troque pela URL do seu backend
         changeOrigin: true,
       },
     },
