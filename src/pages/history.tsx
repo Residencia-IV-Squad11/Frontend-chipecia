@@ -39,13 +39,10 @@ export default function History() {
       }),
   });
 
-  const filteredData = protocolSearch.trim()
-    ? data?.data.filter((item) =>
-        item.numero_protocolo
-          ?.toLowerCase()
-          .includes(protocolSearch.trim().toLowerCase()),
-      )
-    : data?.data;
+  const filteredData = (data?.data ?? []).filter((item) => {
+    if (!protocolSearch.trim()) return true;
+    return item.numero_protocolo?.toLowerCase().includes(protocolSearch.trim().toLowerCase());
+  });
 
   const toggleRow = (id: number) => {
     const next = new Set(expandedRows);
@@ -104,7 +101,7 @@ export default function History() {
             <div className="flex h-64 items-center justify-center">
               <div className="w-8 h-8 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
             </div>
-          ) : !data || (filteredData?.length ?? 0) === 0 ? (
+          ) : !data || filteredData.length === 0 ? (
             <div className="flex flex-col h-64 items-center justify-center text-muted-foreground space-y-3">
               <Search className="w-10 h-10 opacity-20" />
               <p>Nenhum atendimento encontrado.</p>
