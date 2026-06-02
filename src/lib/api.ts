@@ -1,4 +1,4 @@
-const BASE = "/api";
+const BASE = import.meta.env.VITE_API_URL || "/api";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -41,8 +41,18 @@ export interface DashboardOverview {
   totalAttendances: number;
   averageScore: number;
   averageSlaMinutes: number;
-  sentimentDistribution: { positive: number; neutral: number; negative: number };
-  qualityMetricsTrend: { date: string; empathy: number; clarity: number; objectivity: number; resolutiveness: number }[];
+  sentimentDistribution: {
+    positive: number;
+    neutral: number;
+    negative: number;
+  };
+  qualityMetricsTrend: {
+    date: string;
+    empathy: number;
+    clarity: number;
+    objectivity: number;
+    resolutiveness: number;
+  }[];
   recentAttendances: Attendance[];
 }
 
@@ -57,11 +67,19 @@ function traduzirSentimento(s: string): "positive" | "neutral" | "negative" {
 
 function parsearResultadoGroq(resultado_groq: string | null): any {
   if (!resultado_groq) return {};
-  try { return JSON.parse(resultado_groq); } catch {
+  try {
+    return JSON.parse(resultado_groq);
+  } catch {
     try {
-      const fixed = resultado_groq.replace(/'/g, '"').replace(/True/g, "true").replace(/False/g, "false").replace(/None/g, "null");
+      const fixed = resultado_groq
+        .replace(/'/g, '"')
+        .replace(/True/g, "true")
+        .replace(/False/g, "false")
+        .replace(/None/g, "null");
       return JSON.parse(fixed);
-    } catch { return {}; }
+    } catch {
+      return {};
+    }
   }
 }
 
@@ -118,27 +136,46 @@ export const api = {
     };
   },
 
-  listAttendances: async (params: { page?: number; limit?: number; sentiment?: string }): Promise<AttendanceListResponse> => {
+  listAttendances: async (params: {
+    page?: number;
+    limit?: number;
+    sentiment?: string;
+  }): Promise<AttendanceListResponse> => {
     const filaRes: any = await apiFetch(`/atendimento/fila?status=concluido`);
     let itens: Attendance[] = (filaRes.itens || []).map(filaItemParaAttendance);
     if (params.sentiment && params.sentiment !== "all") {
-      itens = itens.filter(item => item.sentiment === params.sentiment);
+      itens = itens.filter((item) => item.sentiment === params.sentiment);
     }
     const page = params.page || 1;
     const limit = params.limit || 20;
     const total = itens.length;
     const start = (page - 1) * limit;
     const paginado = itens.slice(start, start + limit);
-    return { data: paginado, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return {
+      data: paginado,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   },
 
-  analyzeAttendance: async (body: { transcript: string; category?: string; protocolo?: string }): Promise<AnalysisResult> => {
+  analyzeAttendance: async (body: {
+    transcript: string;
+    category?: string;
+    protocolo?: string;
+  }): Promise<AnalysisResult> => {
     const response: any = await apiFetch("/atendimento/avaliar", {
       method: "POST",
-      body: JSON.stringify({ texto_conversa: body.transcript, protocolo: body.protocolo }),
+      body: JSON.stringify({
+        texto_conversa: body.transcript,
+        protocolo: body.protocolo,
+      }),
     });
     if (response.sucesso && response.atendimento_id) {
-      const detalhe: any = await apiFetch(`/atendimento/${response.atendimento_id}`);
+      const detalhe: any = await apiFetch(
+        `/atendimento/${response.atendimento_id}`,
+      );
       const dados = detalhe.dados;
       const classificacao = dados?.classificacao || {};
       const qualidade = dados?.qualidade || {};
